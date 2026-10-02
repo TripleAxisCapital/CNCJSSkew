@@ -2,169 +2,430 @@
 
 Offline two-point workpiece alignment for **CNCjs + GRBL**, built for two-sided precision work such as a watch case on a Shapeoko 3.
 
-CNCJSSkew lets you clamp a part slightly crooked, manually jog to two known reference points, capture those locations, and then load a rotated/translated copy of the G-code that matches the real workpiece. It does **not** use an electrical probe and it does **not** change GRBL EEPROM settings.
+CNCJSSkew lets you clamp a part slightly crooked, manually jog to two known reference points, capture them, and then automatically rotate + translate the loaded G-code so the toolpath matches the real workpiece.
 
-## What it does
+It does **not** use an electrical probe, does **not** change GRBL EEPROM settings, and does **not** need the internet after installation.
 
-Given two reference points whose CAD/program coordinates are known, CNCJSSkew records their actual GRBL **work coordinates** and solves one rigid 2D transform:
+---
 
-- X translation
-- Y translation
-- XY rotation (de-skew)
-- no scaling
+# SIMPLE INSTALL — Raspberry Pi
 
-It then safely rewrites supported XY motion in the currently loaded G-code and loads the aligned copy back into CNCjs for visual inspection. Z is left untouched, so you still establish Z normally for each side of the workpiece.
+These are the exact steps for a Raspberry Pi that does **not** have Git/GitHub set up yet.
 
-The original G-code is retained in the widget and can be restored with one button.
+## 1. Install Git + GitHub CLI
 
-## Intended watch workflow
-
-In Fusion 360, place two small reference holes in disposable stock around the watch. Example:
-
-- Point A: `X0 Y-40`
-- Point B: `X0 Y+40`
-
-The holes do **not** have to be parallel to the Shapeoko's physical Y rail when the stock is clamped.
-
-For each side:
-
-1. Load the original Fusion G-code into CNCjs.
-2. Jog the tool manually to the exact center of physical reference hole A.
-3. Click **Capture current position as A**.
-4. Jog to reference hole B.
-5. Click **Capture current position as B**.
-6. CNCJSSkew automatically calculates rotation and translation.
-7. Click **Apply & load aligned preview**.
-8. Inspect the normal CNCjs visualizer.
-9. Run the job with CNCjs's normal Run control.
-10. After flipping the stock, load the Side 2 G-code and repeat the two captures.
-11. Re-establish Z for Side 2 as normal.
-
-## Safety design
-
-CNCJSSkew is deliberately conservative. It is designed to fail closed instead of silently creating questionable G-code.
-
-It currently targets **GRBL 3-axis milling** and typical Fusion 360 output. It supports:
-
-- G0/G1 XY motion
-- G2/G3 arcs in the G17 XY plane
-- absolute and incremental positioning
-- millimeter and inch programs
-- G53 Z-only retract moves
-- one work coordinate system such as G54
-
-It refuses or blocks risky/ambiguous cases including:
-
-- G53 moves containing X or Y
-- multiple work coordinate systems in one program
-- G68/G69 program rotation
-- G50/G51 scaling
-- G90.1/G91.1 arc-center modes
-- XY probing/canned cycles
-- non-G17 arcs when XY rotation is required
-- dynamic macro expressions using `#` or `[ ]`
-- an already-aligned CNCJSSkew file (prevents accidental double transformation)
-
-Reference spacing is checked before alignment. If the measured distance between A and B differs from the CAD distance beyond the configured limit, the widget refuses to apply the transform.
-
-## Raspberry Pi installation
-
-Everything runs locally on the Raspberry Pi. GitHub is only used to download/update the files.
-
-### 1. Download the repository
-
-If Git authentication is already configured on the Pi:
+Copy and paste:
 
 ```bash
-git clone https://github.com/TripleAxisCapital/CNCJSSkew.git
-cd CNCJSSkew
+sudo apt update
+sudo apt install -y git gh
 ```
 
-Because this repository is private, the Pi must be authenticated to GitHub. If you use GitHub CLI, a convenient option is:
+Check that both installed:
+
+```bash
+git --version
+gh --version
+```
+
+You should see a version number for both.
+
+---
+
+## 2. Log the Raspberry Pi into GitHub
+
+Run:
 
 ```bash
 gh auth login
+```
+
+Choose:
+
+```text
+GitHub.com
+HTTPS
+Yes
+Login with a web browser
+```
+
+GitHub CLI will show a short one-time code.
+
+Open the address it gives you on your normal computer or phone, sign into GitHub, enter the code, and approve access.
+
+Then check the Pi is logged in:
+
+```bash
+gh auth status
+```
+
+You should see that you are logged into `github.com`.
+
+You normally only need to do this once.
+
+---
+
+## 3. Download CNCJSSkew onto the Pi
+
+Copy and paste:
+
+```bash
+cd ~
 gh repo clone TripleAxisCapital/CNCJSSkew
 cd CNCJSSkew
 ```
 
-### 2. Install the local CNCjs mount
+Check the files:
+
+```bash
+ls
+```
+
+You should see files/folders including:
+
+```text
+README.md
+install.sh
+uninstall.sh
+widget
+scripts
+tests
+package.json
+```
+
+---
+
+## 4. Install CNCJSSkew into CNCjs
+
+Copy and paste:
 
 ```bash
 chmod +x install.sh
 ./install.sh
 ```
 
-The installer safely merges this local mount into `~/.cncrc`:
+The installer adds this local CNCjs mount:
 
 ```text
-/cncjs-skew  ->  <this repository>/widget
+/cncjs-skew/  ->  ~/CNCJSSkew/widget
 ```
 
-If `~/.cncrc` already exists, a timestamped backup is created before any change.
+The installer preserves the rest of your CNCjs configuration and makes a backup of `~/.cncrc` before modifying it.
 
-### 3. Restart CNCjs
+---
 
-Restart CNCjs using however you normally run it. For example, if your CNCjs service is managed by PM2 and named `cncjs`:
+## 5. Restart CNCjs
+
+First see how CNCjs is running:
+
+```bash
+pm2 list
+```
+
+If the CNCjs process is named `cncjs`, restart it with:
 
 ```bash
 pm2 restart cncjs
 ```
 
-### 4. Add the widget in CNCjs
+If the process has a different name, restart that name instead.
 
-Open CNCjs in your browser, then:
+Example:
 
-1. **Manage Widgets**
+```bash
+pm2 restart CNCjs
+```
+
+If `pm2` is not being used on your Pi, restart CNCjs the same way you normally start/stop it.
+
+---
+
+## 6. Add CNCJSSkew inside CNCjs
+
+Open CNCjs normally in your browser.
+
+Then:
+
+1. Click **Manage Widgets**
 2. Add a **Custom Widget**
-3. Open its settings
-4. Set the URL to:
+3. Open the Custom Widget settings
+4. Set the widget URL to:
 
 ```text
 /cncjs-skew/
 ```
 
-The widget is now served entirely by the Raspberry Pi. Internet access is not required for machining.
+The **CNCJSSkew · Workpiece Align** panel should appear.
 
-## Updating
+At this point the widget is completely local on the Raspberry Pi.
 
-From the repository directory on the Pi:
+**You can disconnect the Pi from the internet and CNCJSSkew will still work.**
+
+---
+
+# SIMPLE WATCH SETUP
+
+In Fusion 360, create two small reference holes in disposable stock around the watch.
+
+Example:
+
+```text
+Point A = X0  Y-40
+Point B = X0  Y+40
+```
+
+The exact coordinates can be different. The important thing is that you know the exact CAD X/Y coordinate of both holes.
+
+The physical stock does **not** have to be perfectly aligned with the Shapeoko X/Y rails.
+
+Example:
+
+```text
+Machine Y
+   ↑
+   │                 ● B
+   │                /
+   │               /
+   │            WATCH
+   │             /
+   │            /
+   │         ● A
+   │
+   └────────────────────→ Machine X
+```
+
+CNCJSSkew calculates that angle automatically.
+
+---
+
+# HOW TO USE IT
+
+## Side 1
+
+### 1. Load your normal Fusion G-code
+
+Load the original Side 1 G-code into CNCjs normally.
+
+### 2. Enter the CAD coordinates
+
+In CNCJSSkew, enter the exact coordinates of Point A and Point B.
+
+Example:
+
+```text
+A: X 0.000   Y -40.000
+B: X 0.000   Y +40.000
+```
+
+### 3. Capture Point A
+
+Use the normal CNCjs jog controls.
+
+Manually move the spindle/tool until it is exactly centered over physical reference hole A.
+
+Then click:
+
+```text
+Capture current position as A
+```
+
+No electrical probe is required.
+
+### 4. Capture Point B
+
+Jog to the exact center of physical reference hole B.
+
+Click:
+
+```text
+Capture current position as B
+```
+
+### 5. Let CNCJSSkew calculate alignment
+
+The widget automatically calculates:
+
+- XY rotation
+- X translation
+- Y translation
+- reference-hole spacing error
+
+If the two captured points do not make sense compared with the CAD points, CNCJSSkew refuses to apply the alignment.
+
+### 6. Apply the alignment
+
+Click:
+
+```text
+Apply & load aligned preview
+```
+
+CNCJSSkew creates a transformed copy of the G-code and loads it into CNCjs.
+
+It does **not** automatically start the machine.
+
+### 7. Inspect the CNCjs visualizer
+
+Check that the transformed toolpath is where you expect it to be.
+
+Then use CNCjs's normal **Run** control when you are satisfied.
+
+---
+
+# FLIPPING THE WATCH — Side 2
+
+After Side 1:
+
+1. Flip and secure the stock.
+2. Load the **original Side 2 Fusion G-code**.
+3. Jog to physical Point A.
+4. Click **Capture current position as A**.
+5. Jog to physical Point B.
+6. Click **Capture current position as B**.
+7. Click **Apply & load aligned preview**.
+8. Inspect the CNCjs visualizer.
+9. Re-zero/set **Z** for Side 2 as required.
+10. Run the Side 2 job normally.
+
+You do **not** need the stock to return to exactly the same XY position or angle after flipping. CNCJSSkew calculates the new position and rotation again.
+
+---
+
+# WHAT THE ALIGNMENT DOES
+
+Two points define one rigid 2D alignment:
+
+```text
+CAD Point A ─┐
+             ├─ rotation + X translation + Y translation
+CAD Point B ─┘
+```
+
+CNCJSSkew transforms the toolpath itself.
+
+It does **not** physically rotate the Shapeoko axes.
+
+It does **not** scale the G-code.
+
+It does **not** change Z.
+
+---
+
+# IMPORTANT SAFETY RULES
+
+CNCJSSkew is deliberately conservative and tries to fail closed instead of silently generating questionable G-code.
+
+Before using it on the real watch:
+
+1. Test it on scrap first.
+2. Do the first test with the spindle **OFF**.
+3. Keep Z safely above the workpiece.
+4. Deliberately clamp the scrap slightly crooked.
+5. Capture A and B.
+6. Apply the alignment.
+7. Run an air-cut and confirm the toolpath follows the crooked workpiece correctly.
+
+Always inspect the transformed path in the normal CNCjs visualizer before running.
+
+Alignment accuracy is only as good as how accurately you position the tool over Point A and Point B.
+
+Using reference points farther apart improves angular accuracy. For a watch blank, roughly **60–100 mm apart** is a useful target when the stock allows it.
+
+---
+
+# SUPPORTED G-CODE
+
+CNCJSSkew is currently intended for **GRBL 3-axis milling** and normal Fusion 360 output.
+
+It supports common cases including:
+
+- G0 / G1 XY motion
+- G2 / G3 arcs in the G17 XY plane
+- G90 / G91
+- G20 / G21
+- G53 Z-only retract moves
+- one work coordinate system such as G54
+
+For safety, it refuses ambiguous or risky cases such as:
+
+- G53 moves containing X or Y
+- multiple work coordinate systems in one file
+- G68 / G69 rotation
+- G50 / G51 scaling
+- unsupported arc-center modes
+- XY probing/canned cycles
+- non-G17 arcs when rotation is required
+- dynamic macro expressions using `#` or `[ ]`
+- attempting to align an already CNCJSSkew-aligned file again
+
+---
+
+# UPDATE CNCJSSkew LATER
+
+When this repository gets updated, go to the Pi and run:
 
 ```bash
+cd ~/CNCJSSkew
 git pull
 ```
 
-No build step and no npm install are required. Refresh CNCjs after updating. If `install.sh` itself changes the local mount in a future version, simply run it again.
+Then refresh CNCjs in the browser.
 
-## Uninstalling
+Normally there is no build step and no `npm install`.
+
+If the installer itself changes in a future update, simply run:
 
 ```bash
-./uninstall.sh
+cd ~/CNCJSSkew
+./install.sh
 ```
 
-Then restart CNCjs. The script removes only the `/cncjs-skew` mount entry from `~/.cncrc`; it does not delete your repository.
+and restart CNCjs.
 
-## Development and tests
+---
 
-The widget intentionally has **no runtime package dependencies**. CNCjs itself serves the matching Socket.IO client locally from `/socket.io/socket.io.js`.
+# TEST THE CODE
 
-Run the pure alignment/G-code tests with:
+Optional, but useful after downloading/updating:
 
 ```bash
+cd ~/CNCJSSkew
 npm test
 ```
 
-No GitHub Pages, GitHub Actions, CDN, cloud service, or external runtime is required.
+---
 
-## Important machining notes
+# UNINSTALL
 
-- Capture points use the active GRBL **work coordinate system**. Do not change WCS after capturing A/B.
-- If the program explicitly selects G54, capture A/B while G54 is active.
-- The two CAD coordinates entered in the widget must exactly match the same two physical references in the Fusion setup.
-- The widget de-skews XY only. It does not correct Z tilt or surface flatness.
-- Alignment accuracy cannot exceed how accurately you place the tool at the reference centers.
-- Always inspect the transformed path in the normal CNCjs visualizer before running.
+From the Pi:
 
-## License
+```bash
+cd ~/CNCJSSkew
+./uninstall.sh
+```
+
+Then restart CNCjs.
+
+The uninstall script removes only the CNCJSSkew mount from `~/.cncrc`. It does not delete the repository.
+
+---
+
+# OFFLINE DESIGN
+
+GitHub is only used to download/update the project.
+
+There is:
+
+- no GitHub Pages
+- no GitHub Actions dependency
+- no CDN dependency
+- no cloud runtime
+- no internet requirement while machining
+
+The widget, alignment math, and G-code transformation all run locally through the Raspberry Pi + CNCjs.
+
+---
+
+# License
 
 MIT
