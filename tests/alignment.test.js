@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeRigidTransform, transformPoint, rotateVector } from '../widget/alignment.js';
+import { computeRigidTransform, transformPoint, rotateVector, midpointBetween } from '../widget/alignment.js';
 
 const near = (actual, expected, tol = 1e-9) => assert.ok(Math.abs(actual - expected) <= tol, `${actual} != ${expected}`);
 
@@ -30,19 +30,43 @@ test('uses midpoint translation when measured spacing differs slightly', () => {
   near(t.translation.y, 50.1, 1e-9);
 });
 
-test('rejects points too close together', () => {
+test('rejects coincident CAD points', () => {
   assert.throws(() => computeRigidTransform(
-    { x: 0, y: 0 }, { x: 1, y: 0 },
-    { x: 0, y: 0 }, { x: 1, y: 0 }
-  ), /too close/);
+    { x: 1, y: 1 }, { x: 1, y: 1 },
+    { x: 0, y: 0 }, { x: 10, y: 0 }
+  ), /must be different/);
 });
 
-test('rejects excessive spacing error', () => {
+test('rejects excessive spacing error when enabled', () => {
   assert.throws(() => computeRigidTransform(
     { x: 0, y: 0 }, { x: 100, y: 0 },
     { x: 0, y: 0 }, { x: 102, y: 0 },
     { maxSpacingErrorMm: 0.5 }
   ), /spacing differs/);
+});
+
+test('allows any spacing error when spacing limit is disabled', () => {
+  const t = computeRigidTransform(
+    { x: 0, y: 0 }, { x: 100, y: 0 },
+    { x: 0, y: 0 }, { x: 250, y: 0 },
+    { maxSpacingErrorMm: null, maxRotationDeg: null }
+  );
+  near(t.spacingErrorMm, 150);
+});
+
+test('allows any rotation when rotation limit is disabled', () => {
+  const t = computeRigidTransform(
+    { x: 0, y: 0 }, { x: 100, y: 0 },
+    { x: 0, y: 0 }, { x: -100, y: 0 },
+    { maxSpacingErrorMm: null, maxRotationDeg: null }
+  );
+  near(Math.abs(t.angleDeg), 180);
+});
+
+test('midpointBetween returns diagonal midpoint', () => {
+  const p = midpointBetween({ x: -10, y: 20 }, { x: 30, y: 80 });
+  near(p.x, 10);
+  near(p.y, 50);
 });
 
 test('rotateVector does not translate', () => {

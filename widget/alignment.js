@@ -13,6 +13,15 @@ export function distance(a, b) {
   return Math.hypot(q.x - p.x, q.y - p.y);
 }
 
+export function midpointBetween(a, b) {
+  const p = assertFinitePoint(a, 'point 1');
+  const q = assertFinitePoint(b, 'point 2');
+  return {
+    x: (p.x + q.x) / 2,
+    y: (p.y + q.y) / 2
+  };
+}
+
 export function normalizeAngleRadians(angle) {
   let value = angle;
   while (value <= -Math.PI) value += Math.PI * 2;
@@ -42,13 +51,20 @@ export function transformPoint(point, transform) {
   };
 }
 
+function optionalLimit(value) {
+  if (value === null || value === undefined || value === '' || value === false) return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return null;
+  return number;
+}
+
 /**
- * Compute the best rigid 2D mapping (rotation + translation, no scale) from
- * two CAD/program reference points to two measured work-coordinate points.
+ * Compute a rigid 2D mapping (rotation + translation, never scale) from two
+ * CAD/program reference points to two measured work-coordinate points.
  *
- * Translation is based on the two midpoints so any small reference-spacing
- * measurement error is shared equally between the two references instead of
- * being placed entirely on point B.
+ * The only non-disableable geometric rule is that the two points must be
+ * distinct. Rotation and spacing safety limits are optional and can be set to
+ * any non-negative finite value or disabled entirely by passing null.
  */
 export function computeRigidTransform(cadA, cadB, measuredA, measuredB, options = {}) {
   const A = assertFinitePoint(cadA, 'CAD point A');
@@ -56,22 +72,23 @@ export function computeRigidTransform(cadA, cadB, measuredA, measuredB, options 
   const P = assertFinitePoint(measuredA, 'measured point A');
   const Q = assertFinitePoint(measuredB, 'measured point B');
 
-  const {
-    minReferenceDistanceMm = 5,
-    maxSpacingErrorMm = 0.5,
-    maxRotationDeg = 15
-  } = options;
+  const maxSpacingErrorMm = Object.prototype.hasOwnProperty.call(options, 'maxSpacingErrorMm')
+    ? optionalLimit(options.maxSpacingErrorMm)
+    : 0.5;
+  const maxRotationDeg = Object.prototype.hasOwnProperty.call(options, 'maxRotationDeg')
+    ? optionalLimit(options.maxRotationDeg)
+    : 15;
 
   const cadVector = { x: B.x - A.x, y: B.y - A.y };
   const measuredVector = { x: Q.x - P.x, y: Q.y - P.y };
   const cadDistanceMm = Math.hypot(cadVector.x, cadVector.y);
   const measuredDistanceMm = Math.hypot(measuredVector.x, measuredVector.y);
 
-  if (cadDistanceMm < minReferenceDistanceMm) {
-    throw new Error(`CAD reference points are too close together (${cadDistanceMm.toFixed(3)} mm). Use points at least ${minReferenceDistanceMm} mm apart.`);
+  if (cadDistanceMm <= EPSILON) {
+    throw new Error('CAD reference points must be different points.');
   }
-  if (measuredDistanceMm < minReferenceDistanceMm) {
-    throw new Error(`Measured reference points are too close together (${measuredDistanceMm.toFixed(3)} mm). Re-capture the references.`);
+  if (measuredDistanceMm <= EPSILON) {
+    throw new Error('Measured reference points must be different points. Re-capture the references.');
   }
 
   const cadAngle = Math.atan2(cadVector.y, cadVector.x);
@@ -79,17 +96,17 @@ export function computeRigidTransform(cadA, cadB, measuredA, measuredB, options 
   const angleRad = normalizeAngleRadians(measuredAngle - cadAngle);
   const angleDeg = angleRad * 180 / Math.PI;
 
-  if (Math.abs(angleDeg) > maxRotationDeg) {
-    throw new Error(`Measured rotation is ${angleDeg.toFixed(3)}°, which exceeds the ${maxRotationDeg}° safety limit. Re-check the captured points or raise the limit deliberately.`);
+  if (maxRotationDeg !== null && Math.abs(angleDeg) > maxRotationDeg) {
+    throw new Error(`Measured rotation is ${angleDeg.toFixed(3)}°, which exceeds the ${maxRotationDeg}° safety limit. Change or disable the rotation check if this is intentional.`);
   }
 
   const spacingErrorMm = measuredDistanceMm - cadDistanceMm;
-  if (Math.abs(spacingErrorMm) > maxSpacingErrorMm) {
-    throw new Error(`Reference spacing differs by ${Math.abs(spacingErrorMm).toFixed(3)} mm, exceeding the ${maxSpacingErrorMm.toFixed(3)} mm safety limit. Re-center the tool on both references before applying alignment.`);
+  if (maxSpacingErrorMm !== null && Math.abs(spacingErrorMm) > maxSpacingErrorMm) {
+    throw new Error(`Reference spacing differs by ${Math.abs(spacingErrorMm).toFixed(3)} mm, exceeding the ${maxSpacingErrorMm.toFixed(3)} mm safety limit. Change or disable the spacing check if this is intentional.`);
   }
 
-  const cadMid = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
-  const measuredMid = { x: (P.x + Q.x) / 2, y: (P.y + Q.y) / 2 };
+  const cadMid = midpointBetween(A, B);
+  const measuredMid = midpointBetween(P, Q);
   const rotatedCadMid = rotateVector(cadMid, angleRad);
   const translation = {
     x: measuredMid.x - rotatedCadMid.x,

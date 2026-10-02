@@ -1,6 +1,6 @@
 {
   "name": "cncjs-skew",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "Offline two-point workpiece alignment widget for CNCjs and GRBL.",
