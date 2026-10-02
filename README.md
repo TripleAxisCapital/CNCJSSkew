@@ -1,43 +1,37 @@
 # CNCJSSkew
 
-A local CNCjs widget for **two-point workpiece alignment on GRBL/Shapeoko**.
+A fully local CNCjs widget for **two-point workpiece alignment on GRBL / Shapeoko**.
 
-Clamp the workpiece slightly crooked, capture two known reference points, and CNCJSSkew rotates + translates the loaded G-code so the toolpath matches the real part.
+Capture two known points on the real workpiece and CNCJSSkew rotates + translates the loaded G-code so the toolpath follows the part. It is designed for precision two-sided work such as a watch case.
 
-Everything runs locally on the Raspberry Pi. GitHub is only used to download or update the files.
+Everything runs on the Raspberry Pi. GitHub is only used to download or update the project.
 
----
+## Update an existing installation
 
-# Update an existing installation
-
-If CNCJSSkew is already installed on your Raspberry Pi, this update is very simple.
-
-Copy and paste:
+If CNCJSSkew is already installed:
 
 ```bash
 cd ~/CNCJSSkew && git pull
 ```
 
-Then reload CNCjs in your browser.
-
-If the old interface is still cached, do a hard refresh:
+Then hard-refresh CNCjs in the browser:
 
 - Windows/Linux: `Ctrl + Shift + R`
 - Mac: `Cmd + Shift + R`
 
-You **do not need to reinstall the widget**. The existing `/cncjs-skew/` mount already points at this folder.
+The existing `/cncjs-skew/` mount already points at the repo, so no reinstall is normally required.
 
 ---
 
 # First-time install
 
-## 1 — Install Git + GitHub CLI
+## 1. Install Git + GitHub CLI
 
 ```bash
 sudo apt update && sudo apt install -y git gh
 ```
 
-## 2 — Sign in to GitHub
+## 2. Sign in to GitHub
 
 ```bash
 gh auth login
@@ -52,9 +46,7 @@ Yes
 Login with a web browser
 ```
 
-Follow the one-time browser login.
-
-## 3 — Download + install CNCJSSkew
+## 3. Download + install
 
 ```bash
 cd ~ && gh repo clone TripleAxisCapital/CNCJSSkew && cd CNCJSSkew && ./setup.sh
@@ -70,15 +62,13 @@ Set the URL to:
 /cncjs-skew/
 ```
 
-That is it.
+That is it. Internet is no longer required.
 
 ---
 
-# The simple workflow
+# Normal watch workflow
 
-For the watch, create two reference holes in Fusion 360 and know their exact CAD coordinates.
-
-Example:
+In Fusion 360 create two reference points/holes with known CAD coordinates. Example:
 
 ```text
 A = X0 Y-40
@@ -88,142 +78,192 @@ B = X0 Y+40
 Then:
 
 1. Load the original Fusion G-code in CNCjs.
-2. Enter the CAD X/Y coordinates for A and B.
-3. Jog to the exact physical center of A and press **Capture current position**.
-4. Jog to B and press **Capture current position**.
-5. CNCJSSkew calculates XY rotation + X/Y translation.
-6. Press **Apply alignment**.
-7. Inspect the normal CNCjs visualizer.
-8. Run normally.
+2. Enter the CAD coordinates for A and B.
+3. Jog to the exact physical center of A → **Capture current position**.
+4. Jog to B → **Capture current position**.
+5. CNCJSSkew calculates XY rotation + X/Y translation automatically.
+6. Inspect the displayed alignment.
+7. Press **Apply alignment**, or save it as a fixture profile and enable Auto-align.
+8. Inspect the normal CNCjs visualizer.
+9. Run normally.
 
-No electrical probe is required.
-
----
-
-# Auto-align every toolpath
-
-You no longer have to press **Apply alignment** for every file.
-
-After you have a good alignment:
-
-1. Enter a name under **Favorites**.
-2. Press **Save**.
-3. Select that favorite.
-4. Press **Use as default**.
-
-That automatically turns on **Auto-align**.
-
-From then on, every newly loaded **original** G-code file is automatically transformed with that saved alignment and reloaded as an aligned preview.
-
-CNCJSSkew never starts the machine automatically. You still inspect the CNCjs visualizer and press Run yourself.
-
-### Important
-
-A saved alignment contains the physical XY rotation/translation for that fixture/workpiece position and WCS. If the fixture, stock, or work offset moves, capture A/B again and save a new favorite.
+CNCJSSkew never starts the machine automatically.
 
 ---
 
-# Favorites
+# Fixture profiles + Auto-align
 
-Favorites store the complete alignment locally through CNCjs on the Raspberry Pi:
+A fixture profile stores:
 
-- rotation
-- X translation
-- Y translation
+- XY rotation and translation
 - CAD A/B coordinates
-- captured A/B coordinates
-- work coordinate system
+- optional CAD verification point C
+- captured A/B points
+- WCS (G54/G55/etc.)
+- the saved XY work-offset fingerprint
+- Safe Z for midpoint movement
+- last successful verification metadata
 
-You can load any favorite later or mark one as the default.
+After creating a good alignment:
 
-The default favorite is what Auto-align uses after browser refreshes or Raspberry Pi restarts.
+1. Give it a name, for example `Watch Case · Side 1`.
+2. Press **Save new**.
+3. Press **Use as default**.
+
+Auto-align turns on. From then on, newly loaded **original** G-code files are transformed automatically and reloaded as aligned previews.
+
+The widget never presses Run.
+
+## Automatic invalidation
+
+Auto-align pauses rather than silently using a questionable profile if:
+
+- the active WCS no longer matches the saved profile
+- the XY work offset has moved beyond the configured tolerance
+- the profile has unsaved changes
+- an independent point-C verification failed
+- the saved profile predates work-offset fingerprinting
+
+If a fixture or work offset physically changes, re-capture A/B and update or save a new profile.
 
 ---
 
-# Flip the watch
+# Third-point verification
 
-For Side 2:
+A and B define the alignment. Optional point **C** verifies it independently and does **not** change the transform.
 
-1. Flip and secure the stock.
-2. Load the original Side 2 G-code.
-3. Capture A again.
-4. Capture B again.
-5. Save this alignment as a favorite if you want to reuse it.
-6. Apply it manually or mark it as default for automatic application.
-7. Inspect the visualizer.
-8. Set/re-zero Z normally.
-9. Run Side 2.
+1. Enter C's CAD X/Y coordinates.
+2. Jog to the exact physical center of C.
+3. Press **Verify at current position**.
 
-CNCJSSkew corrects XY rotation/translation. It does not alter Z.
+CNCJSSkew shows:
+
+- expected C position
+- measured C position
+- XY residual error
+- quality label
+
+A failed C verification pauses Auto-align for that active profile until it is successfully verified again or A/B are re-captured.
+
+---
+
+# Alignment health
+
+CNCJSSkew reports a residual-based health label rather than a fake accuracy percentage.
+
+Defaults:
+
+```text
+Excellent   ≤ 0.025 mm
+Good        ≤ 0.050 mm
+Acceptable  ≤ 0.100 mm
+Check       > 0.100 mm
+```
+
+All three thresholds are editable under **Safety & quality**.
+
+Without point C, the health result is explicitly labeled **A/B geometry only**. With C, it is an independent verification result.
 
 ---
 
 # Midpoint Finder
 
-The widget also includes **Midpoint Finder**.
+Enter or capture any two XY points and choose:
 
-You can either type two arbitrary XY points with the keyboard or capture the current machine position for each point.
+- **X middle** → `(X1 + X2) / 2`
+- **Y middle** → `(Y1 + Y2) / 2`
+- **XY middle** → diagonal midpoint of both axes
 
-Choose:
+You can also press **Use alignment A + B**.
 
-- **X middle** — calculates `(X1 + X2) / 2`
-- **Y middle** — calculates `(Y1 + Y2) / 2`
-- **XY middle** — calculates the diagonal midpoint of both axes
+## Safe Move to Midpoint
 
-You can also press **Use alignment A + B** to instantly use the two alignment reference points.
+Set **Safe Z** in work-coordinate millimeters and press **Move to midpoint**.
+
+The move is deliberately conservative:
+
+1. CNCJSSkew uses the higher of current Z or Safe Z, so it does not lower Z before horizontal travel.
+2. It retracts Z first.
+3. `G4 P0` drains the GRBL planner so the Z move completes before XY starts.
+4. It moves X, Y, or XY depending on the selected midpoint mode.
+5. It restores inch/mm and absolute/incremental distance mode if they were changed for the move.
+
+The spindle is never started or stopped by this feature.
+
+Safe Z is a **work-coordinate Z value**. Set it to a height that is clear of the stock, clamps, and fixture.
 
 ---
 
-# Safety limits
+# Safety & quality settings
 
-Open **Safety checks** at the bottom of the widget.
+The UI does not impose arbitrary upper caps.
 
-Both limits are completely editable:
+You can edit:
 
-- maximum spacing mismatch
+- maximum A↔B spacing mismatch
 - maximum workpiece rotation
+- work-offset change tolerance
+- Excellent / Good / Acceptable residual thresholds
+- Safe Z
 
-There are **no hard upper caps**. Enter any non-negative value you want.
+Spacing and rotation checks can be switched off entirely.
 
-You can also switch either check completely **Off**.
-
-The only rule that cannot be disabled is mathematical: A and B must be two different points.
+The only non-disableable geometry rule is that A and B must be two different points.
 
 ---
 
 # Keyboard input
 
-All coordinate and limit fields are normal keyboard-editable text fields with decimal input support.
+All coordinate and settings fields are normal keyboard-editable fields.
 
-Live GRBL position updates no longer rebuild the interface while you are typing, so keyboard focus stays in the field.
+Live GRBL position updates patch only live status elements; they do **not** rebuild the interface while you are typing.
 
-Press **Enter** to commit a value, or click outside the field.
+Press **Enter** or click outside a field to commit its value.
 
 ---
 
-# Before using the real watch
+# Flip / Side 2
 
-Do one air-cut first:
+After Side 1:
+
+1. Flip and secure the stock.
+2. Load the original Side 2 G-code.
+3. Re-capture A and B.
+4. Optionally verify C.
+5. Save/update a Side 2 fixture profile if useful.
+6. Apply the alignment or use Auto-align.
+7. Inspect the visualizer.
+8. Re-zero Z normally.
+9. Run Side 2.
+
+CNCJSSkew corrects XY rotation/translation. It does not alter machining Z in the transformed toolpath.
+
+---
+
+# Before the real watch
+
+Do an air-cut first:
 
 1. Use scrap.
 2. Clamp it slightly crooked on purpose.
 3. Keep the spindle **OFF**.
 4. Keep Z safely above the material.
 5. Capture A and B.
-6. Apply alignment.
-7. Run a simple test path.
-8. Confirm the path follows the crooked workpiece correctly.
+6. Verify C if available.
+7. Apply alignment.
+8. Run a simple test path.
+9. Confirm the path follows the crooked workpiece correctly.
 
 Always inspect the aligned preview before a real cut.
 
-For good angular accuracy, put A and B as far apart as practical. Roughly **60–100 mm apart** is a useful target for this watch setup when the stock allows it.
+For angular accuracy, put A and B as far apart as practical. Roughly **60–100 mm apart** is a useful target for this watch setup when the stock allows it.
 
 ---
 
 # Test the code
 
 ```bash
-cd ~/CNCJSSkew && npm test
+cd ~/CNCJSSkew && npm test && npm run check
 ```
 
 ---

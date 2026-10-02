@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeRigidTransform, transformPoint, rotateVector, midpointBetween } from '../widget/alignment.js';
+import {
+  classifyResidual,
+  computeRigidTransform,
+  midpointBetween,
+  normalizeQualityThresholds,
+  rotateVector,
+  transformPoint,
+  verifyTransformedPoint,
+  workOffsetDifference
+} from '../widget/alignment.js';
 
 const near = (actual, expected, tol = 1e-9) => assert.ok(Math.abs(actual - expected) <= tol, `${actual} != ${expected}`);
 
@@ -67,6 +76,38 @@ test('midpointBetween returns diagonal midpoint', () => {
   const p = midpointBetween({ x: -10, y: 20 }, { x: 30, y: 80 });
   near(p.x, 10);
   near(p.y, 50);
+});
+
+test('verification point reports independent residual', () => {
+  const transform = computeRigidTransform(
+    { x: 0, y: 0 }, { x: 100, y: 0 },
+    { x: 10, y: 20 }, { x: 110, y: 20 }
+  );
+  const verification = verifyTransformedPoint(
+    { x: 50, y: 25 },
+    { x: 60.012, y: 44.991 },
+    transform
+  );
+  near(verification.predicted.x, 60);
+  near(verification.predicted.y, 45);
+  near(verification.residual.x, 0.012, 1e-9);
+  near(verification.residual.y, -0.009, 1e-9);
+  near(verification.errorMm, 0.015, 1e-9);
+});
+
+test('quality classifier uses ordered configurable thresholds', () => {
+  assert.equal(classifyResidual(0.01).key, 'excellent');
+  assert.equal(classifyResidual(0.04).key, 'good');
+  assert.equal(classifyResidual(0.08).key, 'acceptable');
+  assert.equal(classifyResidual(0.2).key, 'check');
+  assert.throws(() => normalizeQualityThresholds({ excellentMm: 0.1, goodMm: 0.05, acceptableMm: 0.2 }), /ordered/);
+});
+
+test('work offset difference reports XY delta magnitude', () => {
+  const d = workOffsetDifference({ x: 10, y: 20 }, { x: 10.03, y: 19.96 });
+  near(d.x, 0.03, 1e-9);
+  near(d.y, -0.04, 1e-9);
+  near(d.distanceMm, 0.05, 1e-9);
 });
 
 test('rotateVector does not translate', () => {

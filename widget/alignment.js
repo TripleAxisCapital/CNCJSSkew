@@ -41,13 +41,13 @@ export function rotateVector(vector, angleRad) {
 
 export function transformPoint(point, transform) {
   const p = assertFinitePoint(point, 'point');
-  if (!transform || !Number.isFinite(transform.angleRad)) {
+  if (!transform || !Number.isFinite(transform.angleRad) || !transform.translation) {
     throw new Error('A valid alignment transform is required.');
   }
   const rotated = rotateVector(p, transform.angleRad);
   return {
-    x: rotated.x + transform.translation.x,
-    y: rotated.y + transform.translation.y
+    x: rotated.x + Number(transform.translation.x),
+    y: rotated.y + Number(transform.translation.y)
   };
 }
 
@@ -56,6 +56,63 @@ function optionalLimit(value) {
   const number = Number(value);
   if (!Number.isFinite(number) || number < 0) return null;
   return number;
+}
+
+export function normalizeQualityThresholds(thresholds = {}) {
+  const excellentMm = Number(thresholds.excellentMm ?? 0.025);
+  const goodMm = Number(thresholds.goodMm ?? 0.05);
+  const acceptableMm = Number(thresholds.acceptableMm ?? 0.1);
+
+  if (![excellentMm, goodMm, acceptableMm].every(Number.isFinite)) {
+    throw new Error('Quality thresholds must be finite numbers.');
+  }
+  if (excellentMm < 0 || goodMm < 0 || acceptableMm < 0) {
+    throw new Error('Quality thresholds cannot be negative.');
+  }
+  if (!(excellentMm <= goodMm && goodMm <= acceptableMm)) {
+    throw new Error('Quality thresholds must be ordered: Excellent ≤ Good ≤ Acceptable.');
+  }
+
+  return { excellentMm, goodMm, acceptableMm };
+}
+
+export function classifyResidual(errorMm, thresholds = {}) {
+  const error = Number(errorMm);
+  if (!Number.isFinite(error) || error < 0) {
+    throw new Error('Residual error must be a non-negative finite number.');
+  }
+  const normalized = normalizeQualityThresholds(thresholds);
+  if (error <= normalized.excellentMm) return { key: 'excellent', label: 'Excellent' };
+  if (error <= normalized.goodMm) return { key: 'good', label: 'Good' };
+  if (error <= normalized.acceptableMm) return { key: 'acceptable', label: 'Acceptable' };
+  return { key: 'check', label: 'Check alignment' };
+}
+
+export function verifyTransformedPoint(cadPoint, measuredPoint, transform) {
+  const cad = assertFinitePoint(cadPoint, 'verification CAD point');
+  const measured = assertFinitePoint(measuredPoint, 'verification measured point');
+  const predicted = transformPoint(cad, transform);
+  const residual = {
+    x: measured.x - predicted.x,
+    y: measured.y - predicted.y
+  };
+  return {
+    cad,
+    measured,
+    predicted,
+    residual,
+    errorMm: Math.hypot(residual.x, residual.y)
+  };
+}
+
+export function workOffsetDifference(a, b) {
+  const p = assertFinitePoint(a, 'saved work offset');
+  const q = assertFinitePoint(b, 'current work offset');
+  return {
+    x: q.x - p.x,
+    y: q.y - p.y,
+    distanceMm: Math.hypot(q.x - p.x, q.y - p.y)
+  };
 }
 
 /**
